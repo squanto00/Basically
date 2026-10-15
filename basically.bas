@@ -1,4 +1,4 @@
-' BASICALLY 0.5
+' BASICALLY 0.6
 ' Typed variables, arithmetic expressions, and conditional logic
 
 CONST MAX_VARIABLES = 100
@@ -46,7 +46,7 @@ DECLARE FUNCTION EvaluateCondition(conditionText AS STRING) AS INTEGER
 DECLARE SUB SkipExpressionSpaces()
 
 IF COMMAND(1) = "" THEN
-    PRINT "BASICALLY 0.5"
+    PRINT "BASICALLY 0.6"
     PRINT "Usage: basically <file.bas>"
     END 1
 END IF
@@ -111,7 +111,8 @@ WHILE programCounter < sourceLineCount
 
                 IF conditionValue = 0 THEN
 
-                    ' Find the matching END IF, accounting for nesting.
+                    ' Find the next eligible ELSEIF, ELSE, or END IF.
+                    ' Ignore clauses belonging to nested IF blocks.
                     nestingDepth = 0
                     endIfPosition = -1
 
@@ -120,8 +121,10 @@ WHILE programCounter < sourceLineCount
 
                         IF LEN(blockLine) > 0 THEN
                             IF LEFT(blockLine, 1) <> "'" THEN
+
                                 IF LEFT(blockLine, 3) = "IF " THEN
                                     nestingDepth = nestingDepth + 1
+
                                 ELSEIF blockLine = "END IF" THEN
                                     IF nestingDepth = 0 THEN
                                         endIfPosition = i
@@ -129,7 +132,36 @@ WHILE programCounter < sourceLineCount
                                     ELSE
                                         nestingDepth = nestingDepth - 1
                                     END IF
+
+                                ELSEIF nestingDepth = 0 AND LEFT(blockLine, 7) = "ELSEIF " THEN
+
+                                    thenPosition = INSTR(blockLine, " THEN")
+
+                                    IF thenPosition = 0 THEN
+                                        PRINT "Error: Expected ELSEIF condition THEN"
+                                        CLOSE #fileNumber
+                                        END 1
+                                    END IF
+
+                                    outputText = TRIM(MID(blockLine, 8, thenPosition - 8))
+                                    conditionValue = EvaluateCondition(outputText)
+
+                                    IF conditionValue < -1 THEN
+                                        PRINT "Error: Invalid ELSEIF condition: "; outputText
+                                        CLOSE #fileNumber
+                                        END 1
+                                    END IF
+
+                                    IF conditionValue <> 0 THEN
+                                        endIfPosition = i
+                                        EXIT FOR
+                                    END IF
+
+                                ELSEIF nestingDepth = 0 AND blockLine = "ELSE" THEN
+                                    endIfPosition = i
+                                    EXIT FOR
                                 END IF
+
                             END IF
                         END IF
                     NEXT i
@@ -140,13 +172,49 @@ WHILE programCounter < sourceLineCount
                         END 1
                     END IF
 
+                    ' The main loop increment moves to the selected branch.
                     programCounter = endIfPosition
 
                 END IF
 
-            ELSEIF UCASE(statement) = "END IF" THEN
+            ELSEIF LEFT(upperStatement, 7) = "ELSEIF " OR upperStatement = "ELSE" THEN
 
-                ' A true IF reaches END IF normally.
+                ' A preceding branch was true.
+                ' Skip the remaining branches and find this IF's END IF.
+                nestingDepth = 0
+                endIfPosition = -1
+
+                FOR i = programCounter + 1 TO sourceLineCount - 1
+                    blockLine = UCASE(LTRIM(RTRIM(sourceLines(i))))
+
+                    IF LEN(blockLine) > 0 THEN
+                        IF LEFT(blockLine, 1) <> "'" THEN
+                            IF LEFT(blockLine, 3) = "IF " THEN
+                                nestingDepth = nestingDepth + 1
+
+                            ELSEIF blockLine = "END IF" THEN
+                                IF nestingDepth = 0 THEN
+                                    endIfPosition = i
+                                    EXIT FOR
+                                ELSE
+                                    nestingDepth = nestingDepth - 1
+                                END IF
+                            END IF
+                        END IF
+                    END IF
+                NEXT i
+
+                IF endIfPosition < 0 THEN
+                    PRINT "Error: IF without matching END IF"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                programCounter = endIfPosition
+
+            ELSEIF upperStatement = "END IF" THEN
+
+                ' A selected branch reaches END IF normally.
 
             ' Handle PRINT statements.
             ELSEIF UCASE(LEFT(statement, 5)) = "PRINT" THEN
