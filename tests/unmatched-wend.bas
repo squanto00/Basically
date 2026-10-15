@@ -1,0 +1,2 @@
+PRINT "Before WEND"
+WEND
