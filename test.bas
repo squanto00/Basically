@@ -1,6 +1,10 @@
-DIM name AS STRING
+DIM playerHealth AS INTEGER
+DIM damage AS INTEGER
 
-name = "BASICALLY"
+playerHealth = 100
+damage = 25
 
-PRINT name
-PRINT "Has memory now!"
+playerHealth = playerHealth - damage
+
+PRINT playerHealth
+PRINT "Numeric variables work!"
