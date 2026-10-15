@@ -1,5 +1,5 @@
-' BASICALLY 0.4
-' Typed variables and arithmetic expressions
+' BASICALLY 0.5
+' Typed variables, arithmetic expressions, and conditional logic
 
 CONST MAX_VARIABLES = 100
 CONST TYPE_STRING = 1
@@ -14,6 +14,9 @@ DIM SHARED variableCount AS INTEGER
 DIM SHARED expressionText AS STRING
 DIM SHARED expressionPosition AS INTEGER
 DIM SHARED parseError AS INTEGER
+DIM SHARED sourceLines(0 TO 9999) AS STRING
+DIM SHARED sourceLineCount AS INTEGER
+DIM SHARED programCounter AS INTEGER
 
 DIM AS STRING filename
 DIM AS STRING sourceLine
@@ -21,12 +24,17 @@ DIM AS STRING statement
 DIM AS STRING outputText
 DIM AS STRING variableName
 DIM AS STRING upperStatement
+DIM AS STRING blockLine
 
 DIM AS INTEGER fileNumber
 DIM AS INTEGER i
 DIM AS INTEGER foundVariable
 DIM AS INTEGER declarationPosition
 DIM AS INTEGER declaredType
+DIM AS INTEGER thenPosition
+DIM AS INTEGER endIfPosition
+DIM AS INTEGER nestingDepth
+DIM AS INTEGER conditionValue
 
 DIM AS DOUBLE expressionValue
 
@@ -34,10 +42,11 @@ DECLARE FUNCTION ParseExpression() AS DOUBLE
 DECLARE FUNCTION ParseTerm() AS DOUBLE
 DECLARE FUNCTION ParsePrimary() AS DOUBLE
 DECLARE FUNCTION FindVariable(nameToFind AS STRING) AS INTEGER
+DECLARE FUNCTION EvaluateCondition(conditionText AS STRING) AS INTEGER
 DECLARE SUB SkipExpressionSpaces()
 
 IF COMMAND(1) = "" THEN
-    PRINT "BASICALLY 0.4"
+    PRINT "BASICALLY 0.5"
     PRINT "Usage: basically <file.bas>"
     END 1
 END IF
@@ -51,10 +60,27 @@ IF OPEN(filename FOR INPUT AS #fileNumber) <> 0 THEN
 END IF
 
 variableCount = 0
+sourceLineCount = 0
 
+' Load the source before execution so IF blocks can skip lines.
 WHILE NOT EOF(fileNumber)
-
     LINE INPUT #fileNumber, sourceLine
+
+    IF sourceLineCount >= 10000 THEN
+        PRINT "Error: Program exceeds the 10000-line limit"
+        CLOSE #fileNumber
+        END 1
+    END IF
+
+    sourceLines(sourceLineCount) = sourceLine
+    sourceLineCount = sourceLineCount + 1
+WEND
+
+programCounter = 0
+
+WHILE programCounter < sourceLineCount
+
+    sourceLine = sourceLines(programCounter)
     statement = LTRIM(RTRIM(sourceLine))
 
     ' Ignore empty lines and apostrophe comments.
@@ -63,8 +89,67 @@ WHILE NOT EOF(fileNumber)
 
             upperStatement = UCASE(statement)
 
+            ' Handle IF blocks.
+            IF UCASE(LEFT(statement, 3)) = "IF " THEN
+
+                thenPosition = INSTR(upperStatement, " THEN")
+
+                IF thenPosition = 0 THEN
+                    PRINT "Error: Expected IF condition THEN"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                outputText = TRIM(MID(statement, 4, thenPosition - 4))
+                conditionValue = EvaluateCondition(outputText)
+
+                IF conditionValue < -1 THEN
+                    PRINT "Error: Invalid IF condition: "; outputText
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                IF conditionValue = 0 THEN
+
+                    ' Find the matching END IF, accounting for nesting.
+                    nestingDepth = 0
+                    endIfPosition = -1
+
+                    FOR i = programCounter + 1 TO sourceLineCount - 1
+                        blockLine = UCASE(LTRIM(RTRIM(sourceLines(i))))
+
+                        IF LEN(blockLine) > 0 THEN
+                            IF LEFT(blockLine, 1) <> "'" THEN
+                                IF LEFT(blockLine, 3) = "IF " THEN
+                                    nestingDepth = nestingDepth + 1
+                                ELSEIF blockLine = "END IF" THEN
+                                    IF nestingDepth = 0 THEN
+                                        endIfPosition = i
+                                        EXIT FOR
+                                    ELSE
+                                        nestingDepth = nestingDepth - 1
+                                    END IF
+                                END IF
+                            END IF
+                        END IF
+                    NEXT i
+
+                    IF endIfPosition < 0 THEN
+                        PRINT "Error: IF without matching END IF"
+                        CLOSE #fileNumber
+                        END 1
+                    END IF
+
+                    programCounter = endIfPosition
+
+                END IF
+
+            ELSEIF UCASE(statement) = "END IF" THEN
+
+                ' A true IF reaches END IF normally.
+
             ' Handle PRINT statements.
-            IF UCASE(LEFT(statement, 5)) = "PRINT" THEN
+            ELSEIF UCASE(LEFT(statement, 5)) = "PRINT" THEN
 
                 outputText = LTRIM(MID(statement, 6))
 
@@ -245,10 +330,108 @@ WHILE NOT EOF(fileNumber)
         END IF
     END IF
 
+    programCounter = programCounter + 1
 WEND
 
 CLOSE #fileNumber
 PRINT "Program finished."
+
+
+' Evaluate a numeric comparison.
+' Returns 1 for true, 0 for false, and -1 for an invalid condition.
+FUNCTION EvaluateCondition(conditionText AS STRING) AS INTEGER
+
+    DIM AS INTEGER i
+    DIM AS INTEGER operatorLength
+    DIM AS DOUBLE leftValue
+    DIM AS DOUBLE rightValue
+    DIM AS STRING comparisonOperator
+    DIM AS STRING leftText
+    DIM AS STRING rightText
+    DIM AS STRING currentChar
+    DIM AS STRING nextChar
+
+    EvaluateCondition = -2
+    comparisonOperator = ""
+    operatorLength = 0
+
+    ' Locate the comparison operator between two arithmetic expressions.
+    FOR i = 1 TO LEN(conditionText)
+
+        currentChar = MID(conditionText, i, 1)
+        nextChar = ""
+
+        IF i < LEN(conditionText) THEN
+            nextChar = MID(conditionText, i + 1, 1)
+        END IF
+
+        IF currentChar = "<" OR currentChar = ">" THEN
+            IF nextChar = "=" OR (currentChar = "<" AND nextChar = ">") THEN
+                comparisonOperator = currentChar + nextChar
+                operatorLength = 2
+                EXIT FOR
+            ELSE
+                comparisonOperator = currentChar
+                operatorLength = 1
+                EXIT FOR
+            END IF
+        ELSEIF currentChar = "=" THEN
+            comparisonOperator = "="
+            operatorLength = 1
+            EXIT FOR
+        END IF
+
+    NEXT i
+
+    IF operatorLength = 0 THEN EXIT FUNCTION
+
+    leftText = TRIM(LEFT(conditionText, i - 1))
+    rightText = TRIM(MID(conditionText, i + operatorLength))
+
+    IF LEN(leftText) = 0 OR LEN(rightText) = 0 THEN
+        EXIT FUNCTION
+    END IF
+
+    ' Evaluate the left-hand expression.
+    expressionText = leftText
+    expressionPosition = 1
+    parseError = 0
+    leftValue = ParseExpression()
+    SkipExpressionSpaces()
+
+    IF parseError <> 0 OR expressionPosition <= LEN(expressionText) THEN
+        EXIT FUNCTION
+    END IF
+
+    ' Evaluate the right-hand expression.
+    expressionText = rightText
+    expressionPosition = 1
+    parseError = 0
+    rightValue = ParseExpression()
+    SkipExpressionSpaces()
+
+    IF parseError <> 0 OR expressionPosition <= LEN(expressionText) THEN
+        EXIT FUNCTION
+    END IF
+
+    SELECT CASE comparisonOperator
+        CASE "="
+            EvaluateCondition = (leftValue = rightValue)
+        CASE "<>"
+            EvaluateCondition = (leftValue <> rightValue)
+        CASE "<"
+            EvaluateCondition = (leftValue < rightValue)
+        CASE ">"
+            EvaluateCondition = (leftValue > rightValue)
+        CASE "<="
+            EvaluateCondition = (leftValue <= rightValue)
+        CASE ">="
+            EvaluateCondition = (leftValue >= rightValue)
+        CASE ELSE
+            EvaluateCondition = -2
+    END SELECT
+
+END FUNCTION
 
 
 ' Find a declared variable by name.
