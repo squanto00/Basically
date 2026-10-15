@@ -1,3 +1,4 @@
+
 # BASICALLY
 
 A modern BASIC interpreter written in BASIC.
@@ -7,8 +8,9 @@ structured BASIC syntax, simplicity, and eventually creating small 2D games.
 
 ## Current Status
 
-Early development. BASICALLY 0.6 introduces conditional branching with
-`IF`, `ELSEIF`, and `ELSE`.
+Early development. BASICALLY 0.7 introduces `WHILE` / `WEND` loops,
+building on BASICALLY 0.6's conditional branching with `IF`, `ELSEIF`,
+and `ELSE`.
 
 ### Implemented Features
 
@@ -24,6 +26,10 @@ Early development. BASICALLY 0.6 introduces conditional branching with
 - `ELSE` alternative branches
 - `ELSEIF` conditional branches
 - Nested conditional blocks
+- `WHILE` / `WEND` loops
+- Nested loops
+- Conditional branching inside loops
+- Validation for unmatched `WHILE` and `WEND` statements
 - Apostrophe comments and blank lines
 - Basic error handling for invalid conditions and division by zero
 
@@ -52,6 +58,30 @@ ELSE
 END IF
 ```
 
+## Loop Example
+
+```basic
+DIM count AS INTEGER
+
+count = 1
+
+WHILE count <= 5
+    PRINT count
+    count = count + 1
+WEND
+```
+
+Expected output:
+
+```text
+1
+2
+3
+4
+5
+Program finished.
+```
+
 ## Requirements
 
 - Linux
@@ -76,19 +106,23 @@ Run a BASICALLY program:
 The `tests/` directory contains BASIC programs for testing interpreter
 features.
 
-Run the conditional tests:
+Run the regression tests:
 
 ```bash
 ./basically tests/else.bas
 ./basically tests/elseif.bas
 ./basically tests/nested-conditions.bas
+./basically tests/while.bas
+./basically tests/nested-while.bas
+./basically tests/while-conditions.bas
+./basically tests/unmatched-while.bas
+./basically tests/unmatched-wend.bas
 ```
 
-Additional test programs may be added as BASICALLY develops.
+The unmatched-loop tests should report errors rather than execute normally.
 
 ## Planned Features
 
-- Loops and iteration
 - Functions and reusable procedures
 - Improved error messages and syntax validation
 - A lightweight 2D game engine
