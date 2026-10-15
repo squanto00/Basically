@@ -7,22 +7,50 @@ structured BASIC syntax, simplicity, and eventually creating small 2D games.
 
 ## Current Status
 
-Early development.
+Early development. BASICALLY 0.6 introduces conditional branching with
+`IF`, `ELSEIF`, and `ELSE`.
 
-Currently implemented:
-- Reading BASIC source files
-- Basic PRINT statements
-- Basic string literal handling
-- Initial string variable support
+### Implemented Features
 
-Planned features:
-- Numeric variables and arithmetic
-- IF / ELSE statements
-- Loops
-- Functions
-- Self-hosting
-- A lightweight 2D game engine
-- Built-in graphics and sound tools
+- Reading and executing BASIC source files
+- `PRINT` statements for text and variable values
+- String and integer variables
+- Variable declarations using `DIM`
+- Integer arithmetic: addition, subtraction, multiplication, and division
+- Arithmetic expressions with parentheses and operator precedence
+- Unary positive and negative operators
+- Comparison operators: `=`, `<>`, `<`, `>`, `<=`, and `>=`
+- `IF` / `END IF` conditional blocks
+- `ELSE` alternative branches
+- `ELSEIF` conditional branches
+- Nested conditional blocks
+- Apostrophe comments and blank lines
+- Basic error handling for invalid conditions and division by zero
+
+## Example
+
+```basic
+DIM playerHealth AS INTEGER
+DIM playerGold AS INTEGER
+
+playerHealth = 75
+playerGold = 0
+
+IF playerHealth > 100 THEN
+    PRINT "Expert player!"
+ELSEIF playerHealth > 0 THEN
+    PRINT "Player is alive!"
+
+    IF playerGold > 0 THEN
+        PRINT "Player has gold!"
+    ELSE
+        PRINT "Player needs more gold."
+    END IF
+
+ELSE
+    PRINT "Game over!"
+END IF
+```
 
 ## Requirements
 
@@ -35,3 +63,45 @@ Compile the interpreter:
 
 ```bash
 fbc basically.bas -x basically
+```
+
+Run a BASICALLY program:
+
+```bash
+./basically your-program.bas
+```
+
+## Running Tests
+
+The `tests/` directory contains BASIC programs for testing interpreter
+features.
+
+Run the conditional tests:
+
+```bash
+./basically tests/else.bas
+./basically tests/elseif.bas
+./basically tests/nested-conditions.bas
+```
+
+Additional test programs may be added as BASICALLY develops.
+
+## Planned Features
+
+- Loops and iteration
+- Functions and reusable procedures
+- Improved error messages and syntax validation
+- A lightweight 2D game engine
+- Built-in graphics and sound tools
+- Self-hosting
+
+## Contributing
+
+BASICALLY is an experimental project, and contributions, bug reports,
+feature ideas, and testing are welcome.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+## License
+
+BASICALLY is released under the MIT License.
