@@ -1,0 +1,7 @@
+/basically
+/hello
+*.o
+*.obj
+*.exe
+*~
+.*.swp
