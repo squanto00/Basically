@@ -125,8 +125,6 @@ The unmatched-loop tests should report errors rather than execute normally.
 
 - Functions and reusable procedures
 - Improved error messages and syntax validation
-- A lightweight 2D game engine
-- Built-in graphics and sound tools
 - Self-hosting
 
 ## Contributing
