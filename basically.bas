@@ -22,6 +22,13 @@ DIM SHARED programCounter AS INTEGER
 
 ' Loop matching tables.
 DIM SHARED loopStartForEnd(0 TO MAX_SOURCE_LINES - 1) AS INTEGER
+
+' FOR/NEXT matching and runtime state.
+DIM SHARED forStartForEnd(0 TO MAX_SOURCE_LINES - 1) AS INTEGER
+DIM SHARED forEndForStart(0 TO MAX_SOURCE_LINES - 1) AS INTEGER
+DIM SHARED forLoopVariable(0 TO MAX_SOURCE_LINES - 1) AS INTEGER
+DIM SHARED forLoopLimit(0 TO MAX_SOURCE_LINES - 1) AS LONGINT
+DIM SHARED forLoopStep(0 TO MAX_SOURCE_LINES - 1) AS LONGINT
 DIM SHARED loopEndForStart(0 TO MAX_SOURCE_LINES - 1) AS INTEGER
 
 DIM AS STRING filename
@@ -48,6 +55,17 @@ DIM AS INTEGER blockStart
 DIM AS INTEGER blockEnd
 DIM AS INTEGER blockStack(0 TO MAX_SOURCE_LINES - 1)
 
+' FOR/NEXT parsing state.
+DIM AS INTEGER forStepPosition
+DIM AS INTEGER forStartVariable
+DIM AS STRING forRest
+DIM AS STRING forStartText
+DIM AS STRING forLimitText
+DIM AS STRING forStepText
+DIM AS DOUBLE forStartValue
+DIM AS DOUBLE forLimitValue
+DIM AS DOUBLE forStepValue
+
 DIM AS DOUBLE expressionValue
 
 DECLARE FUNCTION ParseExpression() AS DOUBLE
@@ -55,6 +73,7 @@ DECLARE FUNCTION ParseTerm() AS DOUBLE
 DECLARE FUNCTION ParsePrimary() AS DOUBLE
 DECLARE FUNCTION FindVariable(nameToFind AS STRING) AS INTEGER
 DECLARE FUNCTION EvaluateCondition(conditionText AS STRING) AS INTEGER
+DECLARE FUNCTION EvaluateNumericExpression(expressionToEvaluate AS STRING) AS DOUBLE
 DECLARE SUB SkipExpressionSpaces()
 
 IF COMMAND(1) = "" THEN
@@ -145,6 +164,61 @@ IF blockDepth > 0 THEN
     END 1
 END IF
 
+' Match FOR and NEXT independently of WHILE/WEND.
+' Separate tables allow the two loop types to be nested together.
+blockDepth = 0
+
+FOR i = 0 TO sourceLineCount - 1
+
+    statement = LTRIM(RTRIM(sourceLines(i)))
+    upperStatement = UCASE(statement)
+
+    forStartForEnd(i) = -1
+    forEndForStart(i) = -1
+
+    IF LEN(statement) > 0 THEN
+        IF LEFT(statement, 1) <> "'" THEN
+
+            IF LEFT(upperStatement, 4) = "FOR " THEN
+
+                IF blockDepth >= MAX_SOURCE_LINES THEN
+                    PRINT "Error: Too many nested FOR loops"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                blockStack(blockDepth) = i
+                blockDepth = blockDepth + 1
+
+            ELSEIF upperStatement = "NEXT" OR _
+                LEFT(upperStatement, 5) = "NEXT " THEN
+
+                IF blockDepth = 0 THEN
+                    PRINT "Error: NEXT without matching FOR at line "; i + 1
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                blockDepth = blockDepth - 1
+                blockStart = blockStack(blockDepth)
+
+                forEndForStart(blockStart) = i
+                forStartForEnd(i) = blockStart
+
+            END IF
+
+        END IF
+    END IF
+
+NEXT i
+
+IF blockDepth > 0 THEN
+    PRINT "Error: FOR without matching NEXT at line "; _
+        blockStack(blockDepth - 1) + 1
+    CLOSE #fileNumber
+    END 1
+END IF
+
 programCounter = 0
 
 ' Main interpreter loop.
@@ -154,12 +228,163 @@ WHILE programCounter < sourceLineCount
     statement = LTRIM(RTRIM(sourceLine))
     upperStatement = UCASE(statement)
 
+
     ' Ignore blank lines and apostrophe comments.
     IF LEN(statement) > 0 THEN
         IF LEFT(statement, 1) <> "'" THEN
 
+            ' Handle FOR loops.
+            IF LEFT(upperStatement, 4) = "FOR " THEN
+
+                outputText = TRIM(MID(statement, 5))
+                declarationPosition = INSTR(outputText, "=")
+
+                IF declarationPosition <= 1 THEN
+                    PRINT "Error: Expected FOR variable = start TO limit"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                variableName = LCASE(TRIM(LEFT(outputText, declarationPosition - 1)))
+                forStartVariable = FindVariable(variableName)
+
+                IF forStartVariable < 0 THEN
+                    PRINT "Error: Unknown FOR variable "; variableName
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                IF variableTypes(forStartVariable) <> TYPE_INTEGER THEN
+                    PRINT "Error: FOR variable must be INTEGER: "; variableName
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                outputText = TRIM(MID(outputText, declarationPosition + 1))
+                thenPosition = INSTR(UCASE(outputText), " TO ")
+
+                IF thenPosition = 0 THEN
+                    PRINT "Error: Expected TO in FOR statement"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                forStartText = TRIM(LEFT(outputText, thenPosition - 1))
+                forRest = TRIM(MID(outputText, thenPosition + 4))
+                forStepPosition = INSTR(UCASE(forRest), " STEP ")
+
+                IF forStepPosition > 0 THEN
+                    forLimitText = TRIM(LEFT(forRest, forStepPosition - 1))
+                    forStepText = TRIM(MID(forRest, forStepPosition + 6))
+                ELSE
+                    forLimitText = forRest
+                    forStepText = "1"
+                END IF
+
+                IF LEN(forStartText) = 0 OR LEN(forLimitText) = 0 OR _
+                    LEN(forStepText) = 0 THEN
+                    PRINT "Error: Invalid FOR expression"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                forStartValue = EvaluateNumericExpression(forStartText)
+
+                IF parseError <> 0 THEN
+                    PRINT "Error: Invalid FOR start expression: "; forStartText
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                forLimitValue = EvaluateNumericExpression(forLimitText)
+
+                IF parseError <> 0 THEN
+                    PRINT "Error: Invalid FOR limit expression: "; forLimitText
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                forStepValue = EvaluateNumericExpression(forStepText)
+
+                IF parseError <> 0 THEN
+                    PRINT "Error: Invalid FOR STEP expression: "; forStepText
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                IF forStartValue <> FIX(forStartValue) OR _
+                   forLimitValue <> FIX(forLimitValue) OR _
+                   forStepValue <> FIX(forStepValue) THEN
+                   PRINT "Error: FOR start, limit, and STEP must be integers"
+                   CLOSE #fileNumber
+                   END 1
+               END IF
+
+               numericValues(forStartVariable) = FIX(forStartValue)
+                forLoopVariable(programCounter) = forStartVariable
+                forLoopLimit(programCounter) = FIX(forLimitValue)
+                forLoopStep(programCounter) = FIX(forStepValue)
+
+                IF forLoopStep(programCounter) = 0 THEN
+                    PRINT "Error: FOR STEP cannot be zero"
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                ' Skip the body if the initial value is already past the limit.
+                IF (forLoopStep(programCounter) > 0 AND _
+                    numericValues(forStartVariable) > forLoopLimit(programCounter)) OR _
+                    (forLoopStep(programCounter) < 0 AND _
+                    numericValues(forStartVariable) < forLoopLimit(programCounter)) THEN
+
+                    programCounter = forEndForStart(programCounter)
+
+                END IF
+
+            ELSEIF upperStatement = "NEXT" OR _
+                LEFT(upperStatement, 5) = "NEXT " THEN
+
+                IF forStartForEnd(programCounter) < 0 THEN
+                    PRINT "Error: NEXT without matching FOR at line "; _
+                        programCounter + 1
+                    CLOSE #fileNumber
+                    END 1
+                END IF
+
+                blockStart = forStartForEnd(programCounter)
+                forStartVariable = forLoopVariable(blockStart)
+
+                ' If NEXT names a variable, it must match its FOR.
+                IF LEN(TRIM(statement)) > 4 THEN
+
+                    variableName = LCASE(TRIM(MID(statement, 6)))
+
+                    IF variableName <> variableNames(forStartVariable) THEN
+                        PRINT "Error: NEXT variable does not match FOR at line "; _
+                            programCounter + 1
+                        CLOSE #fileNumber
+                        END 1
+                    END IF
+
+                END IF
+
+                numericValues(forStartVariable) = _
+                    numericValues(forStartVariable) + forLoopStep(blockStart)
+
+                ' Return to the body while the counter remains in range.
+                IF (forLoopStep(blockStart) > 0 AND _
+                    numericValues(forStartVariable) <= forLoopLimit(blockStart)) OR _
+                    (forLoopStep(blockStart) < 0 AND _
+                    numericValues(forStartVariable) >= forLoopLimit(blockStart)) THEN
+
+                    ' Continue at the first statement inside the loop.
+                    ' The main interpreter increments the counter afterward.
+                    programCounter = blockStart
+
+                END IF
+
             ' Handle WHILE loops.
-            IF LEFT(upperStatement, 6) = "WHILE " THEN
+            ELSEIF LEFT(upperStatement, 6) = "WHILE " THEN
 
                 outputText = TRIM(MID(statement, 7))
                 conditionValue = EvaluateCondition(outputText)
@@ -344,7 +569,7 @@ WHILE programCounter < sourceLineCount
 
                 outputText = LTRIM(MID(statement, 6))
 
-                IF LEN(outputText) >= 2 THEN
+                IF LEN(outputText) > 0 THEN
 
                     ' Print a quoted string.
                     IF LEFT(outputText, 1) = CHR(34) AND _
@@ -548,6 +773,23 @@ WEND
 
 CLOSE #fileNumber
 PRINT "Program finished."
+
+
+' Evaluate a numeric expression and report parsing errors through parseError.
+FUNCTION EvaluateNumericExpression(expressionToEvaluate AS STRING) AS DOUBLE
+
+    expressionText = expressionToEvaluate
+    expressionPosition = 1
+    parseError = 0
+
+    EvaluateNumericExpression = ParseExpression()
+    SkipExpressionSpaces()
+
+    IF expressionPosition <= LEN(expressionText) THEN
+        parseError = 1
+    END IF
+
+END FUNCTION
 
 
 ' Evaluate a numeric comparison.
